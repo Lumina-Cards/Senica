@@ -988,10 +988,26 @@
         }
 
 
+        // Bonus tasks have their own dedicated pool, separate from the main tier
+        // ladder — so a bonus task doesn't just repeat Tier 1's questions.
+        // Kept easy/quick, in line with a bonus task being a short extra, not a
+        // graded step on the main ladder.
+        const bonusQuestionBank = [
+            { q: "How many sides does a triangle have?", options: ["2", "3", "4", "5"], a: "3" },
+            { q: "Which of these is a primary color?", options: ["Green", "Purple", "Red", "Orange"], a: "Red" },
+            { q: "What do bees produce?", options: ["Milk", "Honey", "Silk", "Wax"], a: "Honey" },
+            { q: "Which season comes right after winter?", options: ["Summer", "Autumn", "Spring", "Monsoon"], a: "Spring" },
+            { q: "What is 5 + 6?", options: ["10", "11", "12", "13"], a: "11" },
+            { q: "How many hours are in a day?", options: ["12", "18", "24", "30"], a: "24" },
+            { q: "Which of these animals can fly?", options: ["Elephant", "Eagle", "Whale", "Tortoise"], a: "Eagle" },
+            { q: "What is the opposite of 'up'?", options: ["Down", "Left", "Side", "Front"], a: "Down" }
+        ];
+
         // Question difficulty scales with every task tier individually (not just in
         // broad buckets) — each of the 10 tiers has its own pool that is a clear step
         // up from the tier before it, from basic recall at Tier 1 to multi-step
-        // reasoning at Tier 10. Bonus tasks always draw from the Tier 1 pool.
+        // reasoning at Tier 10. Bonus tasks use their own separate pool (see
+        // bonusQuestionBank above), not the Tier 1 pool.
         const questionBank = {
             1: [
                 { q: "What is 2 + 2?", options: ["3", "4", "5", "6"], a: "4" },
@@ -1074,7 +1090,7 @@
             9: 'Expert', 10: 'Master'
         };
 
-        // Maps a task tier (1-10) to its question pool. Bonus tasks always use Tier 1's pool.
+        // Maps a task tier (1-10) to its question pool.
         function questionsForTier(tier) {
             return questionBank[tier] || questionBank[1];
         }
@@ -1628,10 +1644,10 @@
             activeQuiz.currentStep = 0;
             activeQuiz.isBonus = !!isBonus;
             
-            const pool = isBonus ? questionsForTier(1) : questionsForTier(tier);
+            const pool = isBonus ? bonusQuestionBank : questionsForTier(tier);
             const shuffled = [...pool].sort(() => 0.5 - Math.random());
             activeQuiz.questions = shuffled.slice(0, 5);
-            activeQuiz.level = isBonus ? difficultyForTier(1) : difficultyForTier(tier);
+            activeQuiz.level = isBonus ? 'Bonus' : difficultyForTier(tier);
 
             renderQuizStep();
         }

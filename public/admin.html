@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumina | Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root {
+    --bg-dark: #030712;
+    --primary: #6366f1;
+    --primary-hover: #4f46e5;
+    --secondary: #10b981;
+    --secondary-hover: #059669;
+    --danger: #ef4444;
+    --warning: #fbbf24;
+    --text-main: #f9fafb;
+    --text-muted: #9ca3af;
+    --card-bg: rgba(255, 255, 255, 0.03);
+    --card-border: rgba(255, 255, 255, 0.07);
+    --radius-lg: 16px;
+    --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+  body {
+    background: var(--bg-dark);
+    color: var(--text-main);
+    min-height: 100vh;
+  }
+  .glass {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-lg);
+    backdrop-filter: blur(20px);
+  }
+  a { color: inherit; }
+  button { cursor: pointer; font-family: inherit; border: none; background: none; color: inherit; }
+  input, select {
+    font-family: inherit;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    outline: none;
+  }
+  input:focus, select:focus { border-color: rgba(99,102,241,0.5); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--primary); color: #fff; font-weight: 600;
+    font-size: 0.85rem; padding: 9px 16px; border-radius: var(--radius-sm);
+    transition: background 0.2s;
+  }
+  .btn:hover { background: var(--primary-hover); }
+  .btn.secondary { background: rgba(255,255,255,0.06); }
+  .btn.secondary:hover { background: rgba(255,255,255,0.1); }
+  .btn.success { background: var(--secondary); }
+  .btn.success:hover { background: var(--secondary-hover); }
+  .btn.danger { background: var(--danger); }
+  .btn.danger:hover { background: #dc2626; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.small { padding: 6px 10px; font-size: 0.78rem; }
+
+  /* ---- Login screen ---- */
+  #loginScreen {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  #loginCard { width: 100%; max-width: 360px; padding: 32px; text-align: center; }
+  #loginCard h1 { font-size: 1.3rem; font-weight: 800; margin-bottom: 4px; }
+  #loginCard p { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 24px; }
+  #loginCard input { width: 100%; margin-bottom: 12px; }
+  #loginCard .btn { width: 100%; justify-content: center; padding: 12px; }
+  #loginError { color: var(--danger); font-size: 0.82rem; margin-top: 10px; min-height: 1em; }
+
+  /* ---- App shell ---- */
+  #app { display: none; }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid var(--card-border);
+    position: sticky; top: 0; background: rgba(3,7,18,0.85); backdrop-filter: blur(12px); z-index: 10;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; }
+  header .brand span.tag {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    background: rgba(99,102,241,0.15); color: var(--primary); padding: 3px 8px; border-radius: 999px;
+  }
+  nav { display: flex; gap: 4px; }
+  nav button {
+    padding: 8px 14px; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+  }
+  nav button.active { background: rgba(99,102,241,0.15); color: var(--primary); }
+  main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .tab { display: none; }
+  .tab.active { display: block; }
+
+  /* ---- Stat cards ---- */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .stat-card { padding: 18px; }
+  .stat-card .label { color: var(--text-muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+  .stat-card .value { font-size: 1.6rem; font-weight: 800; margin-top: 6px; }
+  .stat-card .sub { color: var(--text-muted); font-size: 0.78rem; margin-top: 2px; }
+
+  /* ---- Table toolbar ---- */
+  .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .toolbar input[type="text"] { flex: 1; min-width: 200px; }
+  .toolbar-spacer { flex: 1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  thead th {
+    text-align: left; color: var(--text-muted); font-weight: 600; font-size: 0.72rem;
+    text-transform: uppercase; letter-spacing: 0.4px; padding: 10px 12px; border-bottom: 1px solid var(--card-border);
+  }
+  tbody td { padding: 12px; border-bottom: 1px solid var(--card-border); vertical-align: middle; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  tbody tr.clickable { cursor: pointer; }
+  .mono { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.8rem; }
+  .muted { color: var(--text-muted); }
+
+  .badge {
+    display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; text-transform: capitalize;
+  }
+  .badge.success { background: rgba(16,185,129,0.15); color: var(--secondary); }
+  .badge.pending { background: rgba(251,191,36,0.15); color: var(--warning); }
+  .badge.failed { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+  .pagination { display: flex; align-items: center; gap: 10px; justify-content: flex-end; margin-top: 14px; }
+  .pagination span { font-size: 0.82rem; color: var(--text-muted); }
+
+  .table-wrap { overflow-x: auto; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 0.9rem; }
+
+  /* ---- Modal ---- */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; z-index: 50; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal { width: 100%; max-width: 480px; padding: 24px; max-height: 90vh; overflow-y: auto; }
+  .modal h2 { font-size: 1.1rem; font-weight: 800; margin-bottom: 4px; }
+  .modal .modal-sub { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 18px; word-break: break-all; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 6px; font-weight: 600; }
+  .field input, .field select { width: 100%; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .modal-actions .btn { flex: 1; justify-content: center; }
+  .modal-close { position: absolute; top: 18px; right: 18px; color: var(--text-muted); }
+  .modal { position: relative; }
+  .tx-mini-list { max-height: 220px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: var(--radius-sm); margin-top: 4px; }
+  .tx-mini-row { display: flex; justify-content: space-between; padding: 9px 12px; font-size: 0.8rem; border-bottom: 1px solid var(--card-border); }
+  .tx-mini-row:last-child { border-bottom: none; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: #111827; border: 1px solid var(--card-border); padding: 12px 20px; border-radius: var(--radius-sm);
+    font-size: 0.85rem; opacity: 0; transition: all 0.25s ease; z-index: 100; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.error { border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+  .toast.success { border-color: rgba(16,185,129,0.4); color: #6ee7b7; }
+
+  @media (max-width: 640px) {
+    header { flex-direction: column; align-items: flex-start; gap: 12px; }
+    nav { width: 100%; overflow-x: auto; }
+    .field-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ============== LOGIN ============== -->
+  <div id="loginScreen">
+    <div class="glass" id="loginCard">
+      <h1>Lumina Admin</h1>
+      <p>Enter the operator password to continue.</p>
+      <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password">
+      <button class="btn" id="loginBtn" onclick="doLogin()">Log In</button>
+      <div id="loginError"></div>
+    </div>
+  </div>
+
+  <!-- ============== APP ============== -->
+  <div id="app">
+    <header>
+      <div class="brand">
+        <i data-lucide="shield-check" style="color:var(--primary);"></i>
+        Lumina <span class="tag">Admin</span>
+      </div>
+      <nav>
+        <button class="nav-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+        <button class="nav-btn" data-tab="users" onclick="switchTab('users')">Users</button>
+        <button class="nav-btn" data-tab="transactions" onclick="switchTab('transactions')">Transactions</button>
+      </nav>
+      <button class="btn secondary small" onclick="doLogout()"><i data-lucide="log-out" style="width:14px;height:14px;"></i> Log Out</button>
+    </header>
+
+    <main>
+      <!-- ---- Overview tab ---- -->
+      <section class="tab active" id="tab-overview">
+        <div class="stat-grid" id="statGrid">
+          <div class="glass stat-card"><div class="label">Total Users</div><div class="value">—</div></div>
+          <div class="glass stat-card"><div class="label">Outstanding Balance</div><div class="value">—</div></div>
+          <div class="glass stat-card"><div class="label">Locked Bonus Balance</div><div class="value">—</div></div>
+          <div class="glass stat-card"><div class="label">Total Withdrawn (all-time)</div><div class="value">—</div></div>
+          <div class="glass stat-card"><div class="label">Pending Withdrawals</div><div class="value">—</div></div>
+          <div class="glass stat-card"><div class="label">New Users (24h)</div><div class="value">—</div></div>
+        </div>
+        <div class="glass" style="padding:20px;">
+          <h3 style="font-size:0.95rem; font-weight:800; margin-bottom:10px;">Quick actions</h3>
+          <p class="muted" style="font-size:0.85rem; line-height:1.6;">
+            Withdrawal requests are recorded as <strong>pending</strong> when a user submits them — this app never moves real money itself.
+            Send the payout yourself via PayPal / Mobile Money / bank, then go to the
+            <a href="#" onclick="switchTab('transactions'); return false;" style="color:var(--primary); font-weight:600;">Transactions tab</a>,
+            filter by status = pending, and mark each one success (paid) or failed (refunds the user automatically).
+          </p>
+        </div>
+      </section>
+
+      <!-- ---- Users tab ---- -->
+      <section class="tab" id="tab-users">
+        <div class="glass" style="padding:18px;">
+          <div class="toolbar">
+            <input type="text" id="userSearch" placeholder="Search by name or email..." oninput="debouncedUserSearch()">
+            <select id="userSort" onchange="loadUsers(1)">
+              <option value="created_at:desc">Newest first</option>
+              <option value="created_at:asc">Oldest first</option>
+              <option value="balance:desc">Balance: high to low</option>
+              <option value="balance:asc">Balance: low to high</option>
+              <option value="total_withdrawn:desc">Total withdrawn: high to low</option>
+              <option value="current_task_tier:desc">Tier: high to low</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th><th>Balance</th><th>Locked Bonus</th><th>Tier</th><th>Withdrawn</th><th>Joined</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody"></tbody>
+            </table>
+            <div class="empty-state" id="usersEmpty" style="display:none;">No users match your search.</div>
+          </div>
+          <div class="pagination">
+            <span id="usersPageInfo"></span>
+            <button class="btn secondary small" onclick="changeUserPage(-1)"><i data-lucide="chevron-left" style="width:14px;height:14px;"></i></button>
+            <button class="btn secondary small" onclick="changeUserPage(1)"><i data-lucide="chevron-right" style="width:14px;height:14px;"></i></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---- Transactions tab ---- -->
+      <section class="tab" id="tab-transactions">
+        <div class="glass" style="padding:18px;">
+          <div class="toolbar">
+            <input type="text" id="txSearch" placeholder="Search by email or reference..." oninput="debouncedTxSearch()">
+            <select id="txStatusFilter" onchange="loadTransactions(1)">
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="success">Success</option>
+              <option value="failed">Failed</option>
+            </select>
+            <select id="txTypeFilter" onchange="loadTransactions(1)">
+              <option value="">All types</option>
+              <option value="task">Task</option>
+              <option value="bonus_task">Bonus task</option>
+              <option value="bonus_unlock">Bonus unlock</option>
+              <option value="daily_bonus">Daily bonus</option>
+              <option value="withdrawal">Withdrawal</option>
+              <option value="admin_adjustment">Admin adjustment</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>User</th><th>Type</th><th>Amount</th><th>Reference</th><th>Status</th><th>Date</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="txTableBody"></tbody>
+            </table>
+            <div class="empty-state" id="txEmpty" style="display:none;">No transactions match your filters.</div>
+          </div>
+          <div class="pagination">
+            <span id="txPageInfo"></span>
+            <button class="btn secondary small" onclick="changeTxPage(-1)"><i data-lucide="chevron-left" style="width:14px;height:14px;"></i></button>
+            <button class="btn secondary small" onclick="changeTxPage(1)"><i data-lucide="chevron-right" style="width:14px;height:14px;"></i></button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ============== User edit modal ============== -->
+  <div class="modal-overlay" id="userModalOverlay" onclick="if(event.target===this) closeUserModal()">
+    <div class="glass modal">
+      <button class="modal-close" onclick="closeUserModal()"><i data-lucide="x" style="width:18px;height:18px;"></i></button>
+      <h2 id="userModalName">User</h2>
+      <div class="modal-sub" id="userModalEmail"></div>
+
+      <div class="field-row">
+        <div class="field"><label>Balance (₵)</label><input type="number" step="0.01" id="editBalance"></div>
+        <div class="field"><label>Locked bonus (₵)</label><input type="number" step="0.01" id="editBonusBalance"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Task tier (1–10)</label><input type="number" min="1" max="10" id="editTier"></div>
+        <div class="field"><label>Name</label><input type="text" id="editName"></div>
+      </div>
+      <div class="field"><label>Payout destination</label><input type="text" id="editDestination"></div>
+      <div class="field"><label>Adjustment note (shows in transaction log)</label><input type="text" id="editNote" placeholder="e.g. Manual correction — support ticket #142"></div>
+
+      <div class="modal-actions">
+        <button class="btn success" onclick="saveUser()"><i data-lucide="save" style="width:15px;height:15px;"></i> Save Changes</button>
+        <button class="btn danger" onclick="deleteUser()"><i data-lucide="trash-2" style="width:15px;height:15px;"></i> Delete</button>
+      </div>
+
+      <h3 style="font-size:0.85rem; font-weight:700; margin-top:22px; margin-bottom:8px; color:var(--text-muted);">Recent transactions</h3>
+      <div class="tx-mini-list" id="userModalTxList"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+  // ---------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------
+  function money(n) { return '₵' + Number(n || 0).toFixed(2); }
+  function fmtDate(d) { return new Date(d).toLocaleString(); }
+
+  function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (type ? ' ' + type : '');
+    clearTimeout(showToast._h);
+    showToast._h = setTimeout(() => { t.className = 'toast'; }, 3200);
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+    let data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) {
+      const err = new Error((data && data.error) || 'Request failed');
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  function debounce(fn, ms) {
+    let h;
+    return function () { clearTimeout(h); h = setTimeout(fn, ms); };
+  }
+
+  // ---------------------------------------------------------------
+  // Auth
+  // ---------------------------------------------------------------
+  async function checkSession() {
+    try {
+      const data = await api('/admin/api/session');
+      if (data.authenticated) enterApp();
+      else showLogin();
+    } catch (e) { showLogin(); }
+  }
+
+  function showLogin() {
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+  }
+
+  function enterApp() {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    lucide.createIcons();
+    loadStats();
+    loadUsers(1);
+    loadTransactions(1);
+  }
+
+  async function doLogin() {
+    const password = document.getElementById('loginPassword').value;
+    const btn = document.getElementById('loginBtn');
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    btn.disabled = true;
+    try {
+      await api('/admin/api/login', { method: 'POST', body: JSON.stringify({ password }) });
+      document.getElementById('loginPassword').value = '';
+      enterApp();
+    } catch (e) {
+      errEl.textContent = e.message || 'Login failed.';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  document.getElementById('loginPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+
+  async function doLogout() {
+    try { await api('/admin/api/logout', { method: 'POST' }); } catch (e) {}
+    showLogin();
+  }
+
+  // ---------------------------------------------------------------
+  // Tabs
+  // ---------------------------------------------------------------
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.querySelector(`.nav-btn[data-tab="${name}"]`).classList.add('active');
+  }
+
+  // ---------------------------------------------------------------
+  // Overview
+  // ---------------------------------------------------------------
+  async function loadStats() {
+    try {
+      const s = await api('/admin/api/stats');
+      const cards = document.querySelectorAll('#statGrid .stat-card');
+      cards[0].querySelector('.value').textContent = s.totalUsers;
+      cards[1].querySelector('.value').textContent = money(s.outstandingBalance);
+      cards[2].querySelector('.value').textContent = money(s.lockedBonusBalance);
+      cards[3].querySelector('.value').textContent = money(s.totalWithdrawnAllTime);
+      cards[4].querySelector('.value').textContent = s.pendingWithdrawals.count;
+      if (!cards[4].querySelector('.sub')) { const d = document.createElement('div'); d.className = 'sub'; cards[4].appendChild(d); }
+      cards[4].querySelector('.sub').textContent = money(s.pendingWithdrawals.amount) + ' total';
+      cards[5].querySelector('.value').textContent = s.newUsersLast24h;
+    } catch (e) {
+      showToast('Failed to load stats: ' + e.message, 'error');
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Users
+  // ---------------------------------------------------------------
+  let usersState = { page: 1, pageSize: 25, total: 0 };
+  const debouncedUserSearch = debounce(() => loadUsers(1), 350);
+
+  async function loadUsers(page) {
+    usersState.page = page || usersState.page;
+    const q = document.getElementById('userSearch').value.trim();
+    const [sortBy, sortDir] = document.getElementById('userSort').value.split(':');
+    const params = new URLSearchParams({ page: usersState.page, pageSize: usersState.pageSize, sortBy, sortDir });
+    if (q) params.set('q', q);
+
+    try {
+      const data = await api('/admin/api/users?' + params.toString());
+      usersState.total = data.total;
+      renderUsers(data.users);
+      const maxPage = Math.max(Math.ceil(data.total / usersState.pageSize), 1);
+      document.getElementById('usersPageInfo').textContent = `Page ${data.page} of ${maxPage} · ${data.total} users`;
+      document.getElementById('usersEmpty').style.display = data.users.length ? 'none' : 'block';
+    } catch (e) {
+      showToast('Failed to load users: ' + e.message, 'error');
+    }
+  }
+
+  function changeUserPage(delta) {
+    const maxPage = Math.max(Math.ceil(usersState.total / usersState.pageSize), 1);
+    const next = Math.min(Math.max(usersState.page + delta, 1), maxPage);
+    if (next !== usersState.page) loadUsers(next);
+  }
+
+  function renderUsers(users) {
+    const body = document.getElementById('usersTableBody');
+    body.innerHTML = users.map(u => `
+      <tr class="clickable" onclick="openUserModal('${u.email.replace(/'/g, "\\'")}')">
+        <td>
+          <div style="font-weight:600;">${escapeHtml(u.name)}</div>
+          <div class="muted mono" style="font-size:0.75rem;">${escapeHtml(u.email)}</div>
+        </td>
+        <td>${money(u.balance)}</td>
+        <td>${money(u.bonus_balance)}</td>
+        <td>${u.current_task_tier} / 10</td>
+        <td>${money(u.total_withdrawn)}</td>
+        <td class="muted">${fmtDate(u.created_at)}</td>
+      </tr>
+    `).join('');
+  }
+
+  let currentModalEmail = null;
+
+  async function openUserModal(email) {
+    currentModalEmail = email;
+    try {
+      const data = await api('/admin/api/users/' + encodeURIComponent(email));
+      const u = data.user;
+      document.getElementById('userModalName').textContent = u.name;
+      document.getElementById('userModalEmail').textContent = u.email;
+      document.getElementById('editBalance').value = u.balance;
+      document.getElementById('editBonusBalance').value = u.bonus_balance;
+      document.getElementById('editTier').value = u.current_task_tier;
+      document.getElementById('editName').value = u.name;
+      document.getElementById('editDestination').value = u.payout_destination || '';
+      document.getElementById('editNote').value = '';
+
+      const txList = document.getElementById('userModalTxList');
+      if (data.transactions.length === 0) {
+        txList.innerHTML = '<div class="tx-mini-row muted">No transactions yet.</div>';
+      } else {
+        txList.innerHTML = data.transactions.slice(0, 20).map(t => `
+          <div class="tx-mini-row">
+            <span>${escapeHtml(t.type)} · ${escapeHtml(t.reference || '')}</span>
+            <span class="${t.amount < 0 ? '' : ''}">${t.amount < 0 ? '-' : ''}${money(Math.abs(t.amount))}</span>
+          </div>
+        `).join('');
+      }
+
+      document.getElementById('userModalOverlay').classList.add('open');
+      lucide.createIcons();
+    } catch (e) {
+      showToast('Failed to load user: ' + e.message, 'error');
+    }
+  }
+
+  function closeUserModal() {
+    document.getElementById('userModalOverlay').classList.remove('open');
+    currentModalEmail = null;
+  }
+
+  async function saveUser() {
+    if (!currentModalEmail) return;
+    const body = {
+      balance: document.getElementById('editBalance').value,
+      bonusBalance: document.getElementById('editBonusBalance').value,
+      currentTaskTier: document.getElementById('editTier').value,
+      name: document.getElementById('editName').value,
+      payoutDestination: document.getElementById('editDestination').value,
+      adjustmentNote: document.getElementById('editNote').value
+    };
+    try {
+      await api('/admin/api/users/' + encodeURIComponent(currentModalEmail), {
+        method: 'PATCH', body: JSON.stringify(body)
+      });
+      showToast('User updated.', 'success');
+      closeUserModal();
+      loadUsers();
+      loadStats();
+    } catch (e) {
+      showToast('Save failed: ' + e.message, 'error');
+    }
+  }
+
+  async function deleteUser() {
+    if (!currentModalEmail) return;
+    if (!confirm(`Permanently delete ${currentModalEmail}? This removes their account and transaction history.`)) return;
+    try {
+      await api('/admin/api/users/' + encodeURIComponent(currentModalEmail), { method: 'DELETE' });
+      showToast('User deleted.', 'success');
+      closeUserModal();
+      loadUsers();
+      loadStats();
+    } catch (e) {
+      showToast('Delete failed: ' + e.message, 'error');
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Transactions
+  // ---------------------------------------------------------------
+  let txState = { page: 1, pageSize: 25, total: 0 };
+  const debouncedTxSearch = debounce(() => loadTransactions(1), 350);
+
+  async function loadTransactions(page) {
+    txState.page = page || txState.page;
+    const q = document.getElementById('txSearch').value.trim();
+    const status = document.getElementById('txStatusFilter').value;
+    const type = document.getElementById('txTypeFilter').value;
+    const params = new URLSearchParams({ page: txState.page, pageSize: txState.pageSize });
+    if (q) params.set('q', q);
+    if (status) params.set('status', status);
+    if (type) params.set('type', type);
+
+    try {
+      const data = await api('/admin/api/transactions?' + params.toString());
+      txState.total = data.total;
+      renderTransactions(data.transactions);
+      const maxPage = Math.max(Math.ceil(data.total / txState.pageSize), 1);
+      document.getElementById('txPageInfo').textContent = `Page ${data.page} of ${maxPage} · ${data.total} transactions`;
+      document.getElementById('txEmpty').style.display = data.transactions.length ? 'none' : 'block';
+    } catch (e) {
+      showToast('Failed to load transactions: ' + e.message, 'error');
+    }
+  }
+
+  function changeTxPage(delta) {
+    const maxPage = Math.max(Math.ceil(txState.total / txState.pageSize), 1);
+    const next = Math.min(Math.max(txState.page + delta, 1), maxPage);
+    if (next !== txState.page) loadTransactions(next);
+  }
+
+  function renderTransactions(txs) {
+    const body = document.getElementById('txTableBody');
+    body.innerHTML = txs.map(t => {
+      const actions = t.type === 'withdrawal' ? `
+        <div style="display:flex; gap:6px;">
+          ${t.status !== 'success' ? `<button class="btn success small" onclick="setTxStatus(${t.id}, 'success')">Mark Paid</button>` : ''}
+          ${t.status !== 'failed' ? `<button class="btn danger small" onclick="setTxStatus(${t.id}, 'failed')">Mark Failed</button>` : ''}
+          ${t.status !== 'pending' ? `<button class="btn secondary small" onclick="setTxStatus(${t.id}, 'pending')">Reopen</button>` : ''}
+        </div>` : '';
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:600;">${escapeHtml(t.user_name || '—')}</div>
+            <div class="muted mono" style="font-size:0.75rem;">${escapeHtml(t.user_email)}</div>
+          </td>
+          <td class="muted">${escapeHtml(t.type)}</td>
+          <td>${t.amount < 0 ? '-' : ''}${money(Math.abs(t.amount))}</td>
+          <td class="muted" style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(t.reference || '')}</td>
+          <td><span class="badge ${t.status}">${t.status}</span></td>
+          <td class="muted">${fmtDate(t.created_at)}</td>
+          <td>${actions}</td>
+        </tr>
+      `;
+    }).join('');
+    lucide.createIcons();
+  }
+
+  async function setTxStatus(id, status) {
+    try {
+      await api('/admin/api/transactions/' + id, { method: 'PATCH', body: JSON.stringify({ status }) });
+      showToast('Transaction updated.', 'success');
+      loadTransactions();
+      loadStats();
+    } catch (e) {
+      showToast('Update failed: ' + e.message, 'error');
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  // ---------------------------------------------------------------
+  checkSession();
+</script>
+</body>
+</html>
