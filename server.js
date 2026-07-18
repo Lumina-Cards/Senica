@@ -122,14 +122,24 @@ app.post('/api/user/complete-tier', async (req, res) => {
 
     const newCompletedTiers = [...(user.completed_tiers || []), tier];
     const newCurrentTier = Math.min(user.current_task_tier + 1, NUM_TASKS);
-    const newBalance = Number(user.balance) + reward;
+
+    // If this completion newly clears Tier 1, any bonus rewards that were
+    // sitting in the locked bonus_balance bucket unlock into the real
+    // balance right now. This must happen server-side — the DB is the
+    // source of truth, so unlocking only in the browser causes the balance
+    // to appear correct locally but revert on the next sync.
+    const unlockingBonus = tier === 1 && Number(user.bonus_balance) > 0;
+    const bonusUnlockAmount = unlockingBonus ? Number(user.bonus_balance) : 0;
+
+    const newBalance = Number(user.balance) + reward + bonusUnlockAmount;
+    const newBonusBalance = unlockingBonus ? 0 : Number(user.bonus_balance);
 
     const updateResult = await client.query(
       `UPDATE users
-       SET balance = $1, current_task_tier = $2, completed_tiers = $3
-       WHERE email = $4
+       SET balance = $1, bonus_balance = $2, current_task_tier = $3, completed_tiers = $4
+       WHERE email = $5
        RETURNING *`,
-      [newBalance, newCurrentTier, newCompletedTiers, email]
+      [newBalance, newBonusBalance, newCurrentTier, newCompletedTiers, email]
     );
 
     await client.query(
@@ -137,6 +147,14 @@ app.post('/api/user/complete-tier', async (req, res) => {
        VALUES ($1, 'task', $2, $3, 'success')`,
       [email, reward, `Task Tier ${tier}`]
     );
+
+    if (unlockingBonus) {
+      await client.query(
+        `INSERT INTO transactions (user_email, type, amount, reference, status)
+         VALUES ($1, 'bonus_unlock', $2, $3, 'success')`,
+        [email, bonusUnlockAmount, 'Locked bonus balance unlocked']
+      );
+    }
 
     await client.query('COMMIT');
     res.json({ success: true, user: serializeUser(updateResult.rows[0]) });
