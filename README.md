@@ -2,86 +2,54 @@
 
 Express + PostgreSQL backend serving a static single-page frontend
 (`public/index.html`). Users register, clear task tiers by passing
-short quizzes (difficulty increases as tiers go up), and submit
-withdrawal requests that are logged for manual/external payout
-processing.
+short quizzes (difficulty increases with every tier, not just in broad
+groups), and submit withdrawal requests that are logged for
+manual/external payout processing.
 
-## What changed in this pass ("advance + fix all bugs")
+## What changed in this pass ("difficulty scaling + withdrawal gate + no client-side storage")
 
-### Bugs fixed
+1. **Per-tier difficulty scaling.** The old 4-bucket question pool
+   (easy/medium/hard/expert covering tiers 1-3/4-6/7-8/9-10) has been
+   replaced with 10 distinct pools, one per tier, each a clear step up
+   from the last — from basic recall at Tier 1 to multi-step math and
+   niche knowledge at Tier 10. See `questionBank` and
+   `questionsForTier()` / `difficultyForTier()` in `public/index.html`.
+   Bonus tasks still draw from the Tier 1 pool.
 
-1. **Daily bonus was never actually saved.** `claimDailyBonus()` only
-   mutated `appState` in the browser — it never called the backend. The
-   ₵1 credit, and the 24h cooldown, both silently reverted the next time
-   the app synced with the server (page reload, next task, etc.), and
-   the cooldown could be reset just by clearing localStorage. Fixed by
-   adding a real `POST /api/user/claim-daily-bonus` endpoint that enforces
-   the cooldown against a `last_daily_bonus_at` column in the database,
-   and updating the frontend to call it.
+2. **Withdrawal is now gated on Task Tier 1, not bonus tasks.**
+   Previously, bonus task rewards sat in a locked `bonus_balance`
+   bucket until Tier 1 was cleared. Now bonus task rewards are credited
+   to the withdrawable `balance` immediately on completion — the gate
+   moved to `/api/user/withdraw` itself, which returns `403
+   {error, gate: 'tier1_required'}` until the user has cleared Tier 1.
+   The `bonus_balance` column and its unlock-on-Tier-1 logic in
+   `complete-tier` are kept only so any pre-existing locked balances
+   from before this change still get folded into `balance` correctly.
 
-2. **Connection pool leaks.** `complete-tier`, `complete-bonus-task`, and
-   `withdraw` all called `pool.connect()` before validating the request
-   body. An invalid request returned early without ever releasing the
-   client back to the pool, which would exhaust the pool under sustained
-   bad input. Fixed by validating input before checking out a connection.
+3. **No client-side storage at all** (no `localStorage`, no
+   `sessionStorage`). The frontend used to cache the whole user profile
+   in `localStorage` and restore it on load. That's gone — identity is
+   now tracked with a signed, httpOnly session cookie
+   (`lumina_session`, set by `cookie-parser`) issued by
+   `POST /api/user/sync` on registration. On page load the frontend
+   calls `GET /api/user/me`, which resolves the cookie server-side and
+   returns the current DB row; `appState` is otherwise held only in
+   memory for the life of the tab. `POST /api/user/logout` clears the
+   cookie without touching the account (added as a non-destructive
+   alternative to the existing "delete everything" reset button). Set
+   `COOKIE_SECRET` in your environment — see `.env.example`.
 
-3. **Reset screen crash.** `resetEngine()` replaced `appState` with an
-   object missing `bonusBalance`, `completedBonusTasks`, and
-   `lastSurpriseDate`. `renderBonusTaskList()` immediately called
-   `.toFixed()` on the now-`undefined` `bonusBalance`, throwing and
-   breaking the rest of the UI refresh. Fixed by resetting to the full
-   state shape.
+## A note on realism
 
-4. **Bonus task completion after Tier 1 didn't update the visible
-   balance.** When a bonus task is completed after Tier 1 is already
-   clear, the server correctly credits the reward straight to `balance`
-   — but the frontend only ever read `bonus_balance` back from that
-   response, so the new balance wasn't reflected until the next full
-   sync. Fixed to also apply `balance` from the response.
-
-5. **Duplicated, drifting sync logic.** `registerProfile()` and
-   `syncProfileWithBackend()` each hand-copied fields off the server's
-   user object, and had already drifted (one was missing
-   `bonus_balance`/`completed_bonus_tasks`). Consolidated into one
-   `applyServerUser()` helper both functions call, so this class of bug
-   can't reoccur.
-
-6. **Stored XSS via withdrawal destination / bank name.** Transaction
-   history is rendered with `innerHTML`, and the withdrawal `reference`
-   field (built from user-entered destination/bank name) was inserted
-   unescaped. A crafted bank name or payout address would execute as
-   HTML/JS in the transaction log. Fixed with an `escapeHtml()` helper
-   applied to all user-supplied text rendered that way.
-
-7. **Transaction type labels were incomplete.** The history view only
-   recognized `withdrawal` and `bonus`/`daily_bonus`; `bonus_task` and
-   `bonus_unlock` transactions (both real transaction types the backend
-   writes) fell through and were mislabeled as "Task Reward". Fixed with
-   a complete type → label mapping.
-
-8. **Repo had duplicate/conflicting copies of the frontend** (a stray
-   root-level `index.html`, an old buggy `public/index.html`, and a
-   correctly-fixed but oddly-named `public/index (7).html`). Consolidated
-   to a single canonical `public/index.html`.
-
-### Hardening / advancement
-
-- Added `helmet` for standard security headers.
-- Added rate limiting (`express-rate-limit`) on all `/api/user/*`
-  endpoints — 30 requests/minute per IP — to blunt scripted abuse of the
-  task/withdrawal/reset endpoints.
-- Added server-side length limits on free-text fields (`name`,
-  `payoutDestination`, withdrawal `destination`/`bankName`) so nothing
-  unbounded gets written to the database.
-- Added basic client-side email format validation on signup (server
-  already validated this; now the user gets faster feedback).
-
-### Carried over from the previous pass (already in place)
-
-- 10 task tiers with difficulty scaling by tier (easy → expert).
-- Confetti effect on task/bonus-task completion.
-- Server-side reward calculation (never trusted from the client).
-- Server-side bonus-balance unlock when Tier 1 completes.
+The task rewards in this build (₵95–₵1,130 per 5-question quiz) are far
+above what a real "answer some trivia" task should plausibly pay, and
+`/api/user/withdraw` never calls a real payment API — payouts are
+manual/external only. That combination is also the exact shape of
+known "task-earning" scam apps. If real users will ever see this app,
+strongly consider: realistic reward amounts, clear in-UI messaging
+about how long payouts actually take, and not advertising "no fee
+required" as a trust signal unless you also disclose the manual payout
+process up front.
 
 ## Important: withdrawals are not automatically paid out
 
@@ -114,7 +82,7 @@ lumina/
    ```bash
    git init
    git add .
-   git commit -m "Fix bugs, add daily bonus backend, harden API"
+   git commit -m "Per-tier difficulty, withdrawal gate on Tier 1, drop client-side storage"
    git branch -M main
    git remote add origin https://github.com/<your-username>/<your-repo>.git
    git push -u origin main --force
@@ -127,7 +95,11 @@ lumina/
 3. **PostgreSQL**: if not already added, New → Database → Add PostgreSQL.
    Railway auto-injects `DATABASE_URL` into your app service.
 
-4. **Verify after deploy**:
+4. **Set `COOKIE_SECRET`** in the Railway service's variables to a
+   long random string — required for signed session cookies in
+   production (a dev fallback is used locally with a console warning).
+
+5. **Verify after deploy**:
    - `https://<your-app>.up.railway.app/healthz` → `{"ok":true}`
    - The root URL loads the app (not "Cannot GET /" — that means
      `public/index.html` didn't make it into the repo).
@@ -140,7 +112,7 @@ lumina/
 ```bash
 npm install
 cp .env.example .env
-# edit .env with a local or remote Postgres connection string
+# edit .env with a local or remote Postgres connection string, and set COOKIE_SECRET
 npm start
 # app runs at http://localhost:3000
 ```

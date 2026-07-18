@@ -733,13 +733,9 @@
                     <i data-lucide="gift" style="width:18px; height:18px; color:#fbbf24;"></i> Bonus Tasks
                 </h3>
                 <p style="color:var(--text-muted); font-size:0.85rem; line-height:1.5; margin-bottom:14px;">
-                    Extra tasks you can complete any time. Earnings are held in a locked bonus balance
-                    <span id="bonusLockNote">and unlock for withdrawal once Task Tier 1 is completed</span>.
+                    Extra tasks you can complete any time. Rewards are credited to your balance
+                    right away — <span id="bonusLockNote">but you'll need to clear Task Tier 1 before you can withdraw anything</span>.
                 </p>
-                <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 0; margin-bottom:10px; border-top:1px solid var(--card-border); border-bottom:1px solid var(--card-border);">
-                    <span style="font-size:0.8rem; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Locked Bonus Balance</span>
-                    <span id="bonusBalanceDisplay" style="font-weight:800; color:#fbbf24;">₵0.00</span>
-                </div>
                 <div class="task-list" id="bonusTaskListContainer"></div>
             </div>
 
@@ -752,7 +748,17 @@
                 <p>Transfer your rewards instantly via PayPal, Mobile Money, or Bank Transfer.</p>
             </header>
 
-            <div class="glass" style="display:flex; flex-direction:column; gap:20px; margin-top:24px;">
+            <div class="glass" id="withdrawGateBanner" style="display:none; margin-top:24px; padding:16px; border:1px solid rgba(251,191,36,0.3); background:rgba(251,191,36,0.06);">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <i data-lucide="lock" style="width:18px; height:18px; color:#fbbf24; flex-shrink:0;"></i>
+                    <p style="font-size:0.88rem; color:var(--text-main); line-height:1.5; margin:0;">
+                        Complete <strong>Task Tier 1</strong> to unlock withdrawals. Your balance keeps growing in the meantime — it just can't be cashed out yet.
+                    </p>
+                </div>
+                <button class="btn" style="width:100%; justify-content:center; padding:12px; margin-top:12px;" onclick="openTab('home')">Go Clear Task Tier 1</button>
+            </div>
+
+            <div class="glass" id="withdrawFormPanel" style="display:flex; flex-direction:column; gap:20px; margin-top:24px;">
                 <div style="text-align:center; padding:10px 0;">
                     <span style="color:var(--text-muted); font-size:0.85rem; text-transform: uppercase; letter-spacing: 0.5px;">Available Earnings Balance</span>
                     <h2 id="withdrawBalanceDisplay" style="font-size:2.8rem; font-weight:800; color:var(--secondary); margin-top:6px; letter-spacing: -1px;">₵0.00</h2>
@@ -869,7 +875,8 @@
                     </div>
                 </div>
 
-                <button class="btn" style="background:#ef4444; justify-content:center; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.2);" onclick="resetEngine()">Logout & Reset Engine</button>
+                <button class="btn" style="justify-content:center;" onclick="logoutSession()"><i data-lucide="log-out" style="width:16px; height:16px;"></i> Log Out (Keep My Progress)</button>
+                <button class="btn" style="background:#ef4444; justify-content:center; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.2);" onclick="resetEngine()">Delete Account & Reset Engine</button>
             </div>
         </section>
 
@@ -910,8 +917,10 @@
         const DAILY_BONUS_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
         // Bonus tasks: separate from the main tier ladder. Each pays BONUS_TASK_REWARD,
-        // but the earnings sit in a locked bucket (appState.bonusBalance) until Task Tier 1
-        // of the main ladder is completed, at which point they unlock into the withdrawable balance.
+        // credited straight to the withdrawable balance as soon as it's completed.
+        // Task Tier 1 gates *withdrawing* (see /api/user/withdraw), not the reward itself.
+        // appState.bonusBalance/unlockBonusIfEligible() only exist to fold in any balance
+        // left over from accounts created before this change.
         const BONUS_TASK_REWARD = 15;
         const bonusTasksCatalog = [
             { id: 'bonus1', label: 'Bonus Task A' },
@@ -979,66 +988,99 @@
         }
 
 
-        // Question difficulty scales with task tier: tiers 1-3 are easy, 4-6 are medium,
-        // 7-8 are hard, 9-10 are expert. Each bucket has enough questions to shuffle from.
+        // Question difficulty scales with every task tier individually (not just in
+        // broad buckets) — each of the 10 tiers has its own pool that is a clear step
+        // up from the tier before it, from basic recall at Tier 1 to multi-step
+        // reasoning at Tier 10. Bonus tasks always draw from the Tier 1 pool.
         const questionBank = {
-            easy: [
+            1: [
                 { q: "What is 2 + 2?", options: ["3", "4", "5", "6"], a: "4" },
-                { q: "Which color is clean water in sunlight?", options: ["Red", "Green", "Blue", "Black"], a: "Blue" },
+                { q: "What color is a ripe banana?", options: ["Purple", "Blue", "Yellow", "Red"], a: "Yellow" },
                 { q: "How many legs does a dog have?", options: ["2", "4", "6", "8"], a: "4" },
-                { q: "Which of these is a fruit?", options: ["Apple", "Carrot", "Potato", "Broccoli"], a: "Apple" },
-                { q: "What is the opposite of 'hot'?", options: ["Warm", "Spicy", "Cold", "Dry"], a: "Cold" },
-                { q: "What animal says 'Meow'?", options: ["Dog", "Cow", "Bird", "Cat"], a: "Cat" },
-                { q: "How many minutes are in one hour?", options: ["30", "50", "60", "90"], a: "60" },
-                { q: "What color is a fresh banana?", options: ["Purple", "Blue", "Yellow", "Red"], a: "Yellow" },
-                { q: "Which of these floats on water?", options: ["Stone", "Wood", "Iron", "Gold"], a: "Wood" },
+                { q: "What sound does a cat make?", options: ["Woof", "Meow", "Moo", "Quack"], a: "Meow" },
                 { q: "How many days are in a week?", options: ["5", "6", "7", "8"], a: "7" }
             ],
-            medium: [
-                { q: "What is 12 x 8?", options: ["86", "96", "106", "104"], a: "96" },
-                { q: "Which planet is known as the Red Planet?", options: ["Venus", "Mars", "Jupiter", "Saturn"], a: "Mars" },
+            2: [
+                { q: "What is 3 x 3?", options: ["6", "9", "12", "3"], a: "9" },
+                { q: "Which of these is a fruit?", options: ["Apple", "Carrot", "Potato", "Broccoli"], a: "Apple" },
+                { q: "What is the opposite of 'hot'?", options: ["Warm", "Spicy", "Cold", "Dry"], a: "Cold" },
+                { q: "How many minutes are in one hour?", options: ["30", "50", "60", "90"], a: "60" },
+                { q: "Which of these floats on water?", options: ["Stone", "Wood", "Iron", "Gold"], a: "Wood" }
+            ],
+            3: [
                 { q: "What is the capital of France?", options: ["Lyon", "Marseille", "Paris", "Nice"], a: "Paris" },
-                { q: "Which gas do plants absorb from the air?", options: ["Oxygen", "Nitrogen", "Carbon Dioxide", "Helium"], a: "Carbon Dioxide" },
                 { q: "How many continents are there on Earth?", options: ["5", "6", "7", "8"], a: "7" },
-                { q: "What is the square root of 144?", options: ["10", "11", "12", "14"], a: "12" },
-                { q: "Which organ pumps blood through the body?", options: ["Lungs", "Liver", "Heart", "Kidney"], a: "Heart" },
                 { q: "What currency is used in Ghana?", options: ["Naira", "Cedi", "Franc", "Shilling"], a: "Cedi" },
+                { q: "Which planet is known as the Red Planet?", options: ["Venus", "Mars", "Jupiter", "Saturn"], a: "Mars" },
+                { q: "Which organ pumps blood through the body?", options: ["Lungs", "Liver", "Heart", "Kidney"], a: "Heart" }
+            ],
+            4: [
+                { q: "What is 12 x 8?", options: ["86", "96", "106", "104"], a: "96" },
+                { q: "Which gas do plants absorb from the air?", options: ["Oxygen", "Nitrogen", "Carbon Dioxide", "Helium"], a: "Carbon Dioxide" },
+                { q: "What is the square root of 144?", options: ["10", "11", "12", "14"], a: "12" },
                 { q: "Which of these numbers is a prime number?", options: ["21", "27", "29", "33"], a: "29" },
                 { q: "In what continent is the Sahara Desert located?", options: ["Asia", "Africa", "South America", "Australia"], a: "Africa" }
             ],
-            hard: [
+            5: [
                 { q: "What is 17 x 13?", options: ["211", "221", "231", "241"], a: "221" },
                 { q: "Which element has the chemical symbol 'Fe'?", options: ["Fluorine", "Iron", "Lead", "Tin"], a: "Iron" },
                 { q: "Who wrote the play 'Romeo and Juliet'?", options: ["Charles Dickens", "William Shakespeare", "Mark Twain", "Jane Austen"], a: "William Shakespeare" },
                 { q: "What is the value of pi rounded to two decimal places?", options: ["3.12", "3.14", "3.16", "3.18"], a: "3.14" },
-                { q: "Which country has the largest population in the world?", options: ["USA", "India", "Indonesia", "Brazil"], a: "India" },
-                { q: "What is the boiling point of water in Celsius at sea level?", options: ["90°C", "95°C", "100°C", "110°C"], a: "100°C" },
+                { q: "What is the boiling point of water in Celsius at sea level?", options: ["90°C", "95°C", "100°C", "110°C"], a: "100°C" }
+            ],
+            6: [
+                { q: "Which country currently has the largest population in the world?", options: ["USA", "India", "Indonesia", "Brazil"], a: "India" },
                 { q: "What is 144 divided by 12, then multiplied by 3?", options: ["30", "33", "36", "39"], a: "36" },
                 { q: "Which ocean is the largest by surface area?", options: ["Atlantic", "Indian", "Arctic", "Pacific"], a: "Pacific" },
                 { q: "What is the next number in the sequence: 2, 6, 12, 20, ?", options: ["26", "28", "30", "32"], a: "30" },
                 { q: "Which programming symbol is typically used to start a comment in HTML?", options: ["//", "#", "<!--", "/*"], a: "<!--" }
             ],
-            expert: [
+            7: [
                 { q: "What is the derivative of x² with respect to x?", options: ["x", "2x", "x²", "2"], a: "2x" },
                 { q: "In what year did the Berlin Wall fall?", options: ["1987", "1989", "1991", "1993"], a: "1989" },
                 { q: "What is 23 x 19?", options: ["417", "427", "437", "447"], a: "437" },
                 { q: "Which African country was formerly known as the Gold Coast?", options: ["Nigeria", "Ghana", "Kenya", "Senegal"], a: "Ghana" },
-                { q: "What is the SI unit of electrical resistance?", options: ["Volt", "Watt", "Ohm", "Ampere"], a: "Ohm" },
+                { q: "What is the SI unit of electrical resistance?", options: ["Volt", "Watt", "Ohm", "Ampere"], a: "Ohm" }
+            ],
+            8: [
                 { q: "If a train travels 240km in 3 hours, what is its average speed?", options: ["60 km/h", "70 km/h", "80 km/h", "90 km/h"], a: "80 km/h" },
                 { q: "Which philosopher wrote 'The Republic'?", options: ["Aristotle", "Socrates", "Plato", "Descartes"], a: "Plato" },
                 { q: "What is the binary representation of the decimal number 10?", options: ["1010", "1100", "1001", "1110"], a: "1010" },
                 { q: "Which gas makes up the largest percentage of Earth's atmosphere?", options: ["Oxygen", "Carbon Dioxide", "Nitrogen", "Argon"], a: "Nitrogen" },
                 { q: "What is the compound interest on ₵100 at 10% per year after 2 years?", options: ["₵20.00", "₵21.00", "₵22.00", "₵10.00"], a: "₵21.00" }
+            ],
+            9: [
+                { q: "What is 37 x 24?", options: ["878", "888", "898", "908"], a: "888" },
+                { q: "Who was the first President of Ghana?", options: ["Kwame Nkrumah", "Jerry Rawlings", "Kofi Annan", "John Kufuor"], a: "Kwame Nkrumah" },
+                { q: "What is the sum of the interior angles of a hexagon?", options: ["540°", "630°", "720°", "900°"], a: "720°" },
+                { q: "What is the pH value of a neutral solution at 25°C?", options: ["0", "7", "10", "14"], a: "7" },
+                { q: "What is 15% of 240?", options: ["30", "32", "36", "40"], a: "36" },
+                { q: "Which gas is primarily responsible for the greenhouse effect on Earth?", options: ["Oxygen", "Nitrogen", "Carbon Dioxide", "Argon"], a: "Carbon Dioxide" }
+            ],
+            10: [
+                { q: "What is the value of x in the equation 3x + 7 = 25?", options: ["4", "6", "8", "9"], a: "6" },
+                { q: "In what year did World War II end?", options: ["1943", "1944", "1945", "1946"], a: "1945" },
+                { q: "What is the least common multiple (LCM) of 8 and 12?", options: ["16", "24", "32", "48"], a: "24" },
+                { q: "In economics, what term describes a sustained increase in the general price level?", options: ["Deflation", "Inflation", "Recession", "Stagflation"], a: "Inflation" },
+                { q: "What is the standard atomic number of Carbon?", options: ["4", "6", "8", "12"], a: "6" },
+                { q: "If a car depreciates 20% each year from a value of ₵1,000, what is it worth after 2 years?", options: ["₵800", "₵720", "₵640", "₵680"], a: "₵640" }
             ]
         };
 
-        // Maps a task tier (1-10) to a difficulty bucket. Bonus tasks always use 'easy'.
+        // Friendly label per tier, purely for the "X difficulty" badge shown during a quiz.
+        const tierDifficultyLabel = {
+            1: 'Beginner', 2: 'Beginner', 3: 'Easy', 4: 'Easy',
+            5: 'Intermediate', 6: 'Intermediate', 7: 'Advanced', 8: 'Advanced',
+            9: 'Expert', 10: 'Master'
+        };
+
+        // Maps a task tier (1-10) to its question pool. Bonus tasks always use Tier 1's pool.
+        function questionsForTier(tier) {
+            return questionBank[tier] || questionBank[1];
+        }
+
         function difficultyForTier(tier) {
-            if (typeof tier !== 'number') return 'easy';
-            if (tier <= 3) return 'easy';
-            if (tier <= 6) return 'medium';
-            if (tier <= 8) return 'hard';
-            return 'expert';
+            return tierDifficultyLabel[tier] || 'Beginner';
         }
 
         let appState = {
@@ -1068,22 +1110,11 @@
             }
         }
 
-        // Restore from localStorage if available
-        try {
-            if (localStorage.getItem('lumina_user_profile')) {
-                const saved = JSON.parse(localStorage.getItem('lumina_user_profile'));
-                appState = { ...appState, ...saved };
-            }
-        } catch (e) {
-            console.warn('Could not restore state from localStorage:', e);
-        }
-
+        // No client-side storage of any kind (no localStorage, no sessionStorage).
+        // appState lives only in memory for the current page load. Returning users
+        // are recognized by the server via a signed, httpOnly session cookie —
+        // see loadSession() below, called once on DOMContentLoaded.
         function saveState() {
-            try {
-                localStorage.setItem('lumina_user_profile', JSON.stringify(appState));
-            } catch (e) {
-                console.warn('Could not save state to localStorage:', e);
-            }
             updateUI();
         }
 
@@ -1106,29 +1137,6 @@
             appState.lastDailyBonusAt = dbUser.last_daily_bonus_at
                 ? new Date(dbUser.last_daily_bonus_at).getTime()
                 : appState.lastDailyBonusAt;
-        }
-
-        async function syncProfileWithBackend() {
-            if (!appState.isUserRegistered || !appState.userEmail) return;
-            try {
-                const response = await fetch('/api/user/sync', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email: appState.userEmail,
-                        name: appState.userName,
-                        payoutDestination: appState.payoutDestination
-                    })
-                });
-                if (response.ok) {
-                    const dbUser = await response.json();
-                    applyServerUser(dbUser);
-                    saveState();
-                    await syncTransactions();
-                }
-            } catch (err) {
-                console.error("Error syncing profile on startup:", err);
-            }
         }
 
         async function syncTransactions() {
@@ -1157,6 +1165,10 @@
 
             document.getElementById('walletTopBalance').textContent = `₵${appState.balance.toFixed(2)}`;
             document.getElementById('withdrawBalanceDisplay').textContent = `₵${appState.balance.toFixed(2)}`;
+
+            const withdrawUnlocked = appState.completedTiers.includes(1);
+            document.getElementById('withdrawGateBanner').style.display = withdrawUnlocked ? 'none' : 'block';
+            document.getElementById('withdrawFormPanel').style.display = withdrawUnlocked ? 'flex' : 'none';
             document.getElementById('profileProgression').textContent = `Task ${appState.currentTaskTier} of ${NUM_TASKS}`;
             document.getElementById('profilePayouts').textContent = `₵${appState.totalWithdrawn.toFixed(2)}`;
 
@@ -1271,13 +1283,11 @@
         }
 
         function renderBonusTaskList() {
-            const balanceEl = document.getElementById('bonusBalanceDisplay');
             const lockNoteEl = document.getElementById('bonusLockNote');
-            if (balanceEl) balanceEl.textContent = `₵${appState.bonusBalance.toFixed(2)}`;
             if (lockNoteEl) {
                 lockNoteEl.textContent = appState.completedTiers.includes(1)
-                    ? 'and unlock automatically once earned, since Task Tier 1 is already complete'
-                    : 'and unlock for withdrawal once Task Tier 1 is completed';
+                    ? 'good news — Task Tier 1 is already cleared, so withdrawals are unlocked'
+                    : "but you'll need to clear Task Tier 1 before you can withdraw anything";
             }
 
             const listContainer = document.getElementById('bonusTaskListContainer');
@@ -1300,7 +1310,7 @@
                             <span class="task-badge">${badgeLabel}</span>
                             <span class="task-title">${task.label}</span>
                             <div class="task-meta">
-                                <span class="meta-earn">Payout: ₵${BONUS_TASK_REWARD} (locked until Task Tier 1)</span>
+                                <span class="meta-earn">Payout: ₵${BONUS_TASK_REWARD} (credited instantly)</span>
                             </div>
                         </div>
                         ${actionButton}
@@ -1603,7 +1613,7 @@
                         <p style="color:var(--text-muted); font-size:0.9rem; margin-top:6px; line-height:1.5;">Answer all 5 questions correctly to clear ${label} and earn your reward. No fee is required to start.</p>
                     </div>
                     <div style="background:rgba(251,191,36,0.06); padding:14px; border-radius:var(--radius-sm); font-size:0.85rem; color:#fbbf24; border: 1px solid rgba(251,191,36,0.15); font-weight:600;">
-                        Reward: ₵${reward}.00, held as locked bonus balance until Task Tier 1 is completed.
+                        Reward: ₵${reward}.00, credited to your balance instantly. (Withdrawing still requires Task Tier 1 to be complete.)
                     </div>
                     <button class="btn" id="start-quiz-btn" style="justify-content:center; padding:15px;" onclick="executeQuizLaunch('${bonusId}', ${reward}, true)">
                         <i data-lucide="play" style="width:18px; height:18px;"></i> Start Task
@@ -1618,11 +1628,10 @@
             activeQuiz.currentStep = 0;
             activeQuiz.isBonus = !!isBonus;
             
-            const level = isBonus ? 'easy' : difficultyForTier(tier);
-            const pool = questionBank[level] || questionBank.easy;
+            const pool = isBonus ? questionsForTier(1) : questionsForTier(tier);
             const shuffled = [...pool].sort(() => 0.5 - Math.random());
             activeQuiz.questions = shuffled.slice(0, 5);
-            activeQuiz.level = level;
+            activeQuiz.level = isBonus ? difficultyForTier(1) : difficultyForTier(tier);
 
             renderQuizStep();
         }
@@ -1645,7 +1654,7 @@
                         <div class="progress-bar" style="width: ${progress}%"></div>
                     </div>
                     <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--text-muted); font-weight:600;">
-                        <span style="text-transform:capitalize;">${activeQuiz.level || 'easy'} difficulty</span>
+                        <span>${activeQuiz.level || 'Beginner'} difficulty</span>
                         <span>Step ${activeQuiz.currentStep + 1} of 5</span>
                     </div>
                     <div class="question-card">
@@ -1696,7 +1705,6 @@
                     const data = await response.json();
                     if (data.success) {
                         appState.balance = parseFloat(data.user.balance);
-                        appState.bonusBalance = parseFloat(data.user.bonus_balance);
                         appState.currentTaskTier = parseInt(data.user.current_task_tier);
                         appState.completedTiers = data.user.completed_tiers || [];
                         saveState();
@@ -1727,12 +1735,6 @@
                 saveState();
             }
 
-            // The server already unlocks any locked bonus balance atomically when Tier 1
-            // clears (see /api/user/complete-tier). Only apply the local fallback unlock
-            // when we weren't able to confirm with the server, to avoid double-crediting.
-            if (!serverConfirmed) {
-                unlockBonusIfEligible();
-            }
             spawnConfetti();
 
             showSheet("Task Succeeded", `
@@ -1748,13 +1750,10 @@
             `);
         }
 
-        // Bonus task completion: reward is added to the locked bonusBalance bucket, not the
-        // withdrawable balance, unless Task Tier 1 is already complete (in which case it unlocks
-        // immediately). Wire this to a real backend endpoint (e.g. /api/user/complete-bonus-task)
-        // when one exists; falls back to a client-side update otherwise.
+        // Bonus task completion: the reward is credited straight to the withdrawable
+        // balance every time — there's no separate locked bucket. Whether it can be
+        // *withdrawn* yet depends on Task Tier 1, enforced by /api/user/withdraw.
         async function processBonusTaskCompletion() {
-            let serverConfirmed = false;
-
             try {
                 const response = await fetch('/api/user/complete-bonus-task', {
                     method: 'POST',
@@ -1770,11 +1769,9 @@
                     const data = await response.json();
                     if (data.success) {
                         appState.balance = parseFloat(data.user.balance);
-                        appState.bonusBalance = parseFloat(data.user.bonus_balance);
                         appState.completedBonusTasks = data.user.completed_bonus_tasks || [];
                         saveState();
                         await syncTransactions();
-                        serverConfirmed = true;
                     }
                 } else {
                     applyBonusRewardLocally();
@@ -1784,13 +1781,10 @@
                 applyBonusRewardLocally();
             }
 
-            if (!serverConfirmed) {
-                unlockBonusIfEligible();
-            }
             saveState();
             spawnConfetti();
 
-            const stillLocked = !appState.completedTiers.includes(1);
+            const withdrawLocked = !appState.completedTiers.includes(1);
 
             showSheet("Bonus Task Succeeded", `
                 <div class="success-screen">
@@ -1799,9 +1793,8 @@
                     </div>
                     <h3 style="font-size:1.4rem; font-weight:800; color:var(--secondary); letter-spacing:-0.5px;">Bonus Earned</h3>
                     <p style="color:var(--text-muted); font-size:0.95rem; line-height:1.5;">
-                        ${stillLocked
-                            ? 'Your bonus reward has been added to your locked bonus balance. It becomes withdrawable once you complete Task Tier 1.'
-                            : 'Your bonus reward has been credited to your withdrawable balance.'}
+                        Your bonus reward has been credited to your balance.
+                        ${withdrawLocked ? ' Complete Task Tier 1 to be able to withdraw it.' : ''}
                     </p>
                     <div style="font-size:2.2rem; font-weight:800; color:var(--text-main); margin:12px 0; letter-spacing:-0.5px;">+₵${activeQuiz.reward}.00</div>
                     <button class="btn" style="width:100%; justify-content:center; padding:14px;" onclick="closeSheet()">Go Back to Dashboard</button>
@@ -1813,11 +1806,7 @@
             if (!appState.completedBonusTasks.includes(activeQuiz.tier)) {
                 appState.completedBonusTasks.push(activeQuiz.tier);
             }
-            if (appState.completedTiers.includes(1)) {
-                appState.balance += activeQuiz.reward;
-            } else {
-                appState.bonusBalance += activeQuiz.reward;
-            }
+            appState.balance += activeQuiz.reward;
             saveState();
         }
 
@@ -1851,6 +1840,11 @@
             const amt = parseFloat(document.getElementById('payoutAmount').value);
             const dest = document.getElementById('payoutDestination').value;
             const bankName = document.getElementById('payoutBankName').value;
+
+            if (!appState.completedTiers.includes(1)) {
+                showToast("Complete Task Tier 1 before you can withdraw.");
+                return;
+            }
 
             if(!activePayoutMethod || isNaN(amt) || !dest) {
                 showToast("Please fill all withdrawal fields.");
@@ -1934,8 +1928,39 @@
             }, 3000);
         }
 
+        // Clears the session cookie only. Unlike resetEngine(), this keeps the
+        // account and all progress in the database — the user can log back in
+        // with the same email via the signup form (which upserts by email).
+        async function logoutSession() {
+            try {
+                await fetch('/api/user/logout', { method: 'POST', credentials: 'same-origin' });
+            } catch (err) {
+                console.error('Error logging out:', err);
+            }
+
+            appState = {
+                balance: 0.00,
+                currentTaskTier: 1,
+                completedTiers: [],
+                totalWithdrawn: 0.00,
+                isUserRegistered: false,
+                userName: "",
+                userEmail: "",
+                payoutDestination: "",
+                transactions: [],
+                joinedAt: null,
+                lastDailyBonusAt: null,
+                lastSurpriseDate: null,
+                bonusBalance: 0.00,
+                completedBonusTasks: []
+            };
+            saveState();
+            openTab('home');
+            showToast("Logged out. Your progress is saved — sign back in any time.");
+        }
+
         async function resetEngine() {
-            if (confirm("Logout of session and reset current simulation progression?")) {
+            if (confirm("This permanently deletes your account and all progress from the database. This cannot be undone. Continue?")) {
                 const emailToReset = appState.userEmail;
                 
                 appState = {
@@ -1973,20 +1998,32 @@
             }
         }
 
+        // Resolves the current user from the server-side session cookie (no
+        // client-side storage involved). Called once on page load.
+        async function loadSession() {
+            try {
+                const response = await fetch('/api/user/me', { credentials: 'same-origin' });
+                if (response.ok) {
+                    const dbUser = await response.json();
+                    applyServerUser(dbUser);
+                    appState.isUserRegistered = true;
+                    updateUI();
+                    await syncTransactions();
+                } else {
+                    // No active session (401) — show the signup screen as-is.
+                    updateUI();
+                }
+            } catch (err) {
+                console.error('Error loading session:', err);
+                updateUI();
+            }
+        }
+
         // ---- DOM Ready ----
         document.addEventListener('DOMContentLoaded', function() {
-            // Ensure localStorage is available
-            if (typeof localStorage === 'undefined') {
-                console.warn('localStorage not available – state will not persist.');
-            }
-
             updateUI();
             openTab('home');
-            
-            // Sync with backend if user already registered (from localStorage)
-            if (appState.isUserRegistered && appState.userEmail) {
-                syncProfileWithBackend();
-            }
+            loadSession();
         });
     </script>
 </body>
