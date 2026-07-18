@@ -31,8 +31,15 @@ async function initSchema() {
       completed_tiers       INTEGER[] NOT NULL DEFAULT '{}',
       completed_bonus_tasks TEXT[] NOT NULL DEFAULT '{}',
       total_withdrawn       NUMERIC(12,2) NOT NULL DEFAULT 0,
+      last_daily_bonus_at   TIMESTAMPTZ,
       created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+  `);
+
+  // Migration safety: add the column if this table already existed from an
+  // earlier deployment that predates the server-side daily bonus feature.
+  await pool.query(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus_at TIMESTAMPTZ;
   `);
 
   await pool.query(`

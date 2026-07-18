@@ -728,9 +728,7 @@
                 </div>
             </div>
 
-            <div class="task-list" id="taskListContainer"></div>
-
-            <div class="glass" style="margin-top:24px; padding:20px;">
+            <div class="glass" style="margin-bottom:24px; padding:20px;">
                 <h3 style="font-size:1rem; font-weight:800; display:flex; align-items:center; gap:8px; margin-bottom:6px;">
                     <i data-lucide="gift" style="width:18px; height:18px; color:#fbbf24;"></i> Bonus Tasks
                 </h3>
@@ -744,6 +742,8 @@
                 </div>
                 <div class="task-list" id="bonusTaskListContainer"></div>
             </div>
+
+            <div class="task-list" id="taskListContainer"></div>
         </section>
 
         <section id="screen-withdraw" class="screen" style="display: none;">
@@ -1088,6 +1088,26 @@
         }
 
         // DATABASE STATE SYNCHRONIZATION
+        // Applies a user object returned by the backend (/api/user/sync, etc.) to
+        // appState. Centralized so every place that receives a server user object
+        // updates the same fields the same way — a prior bug had this logic
+        // duplicated across functions and drifting out of sync with each other.
+        function applyServerUser(dbUser) {
+            appState.userName = dbUser.name;
+            appState.userEmail = dbUser.email;
+            appState.balance = parseFloat(dbUser.balance);
+            appState.bonusBalance = parseFloat(dbUser.bonus_balance);
+            appState.currentTaskTier = parseInt(dbUser.current_task_tier);
+            appState.completedTiers = dbUser.completed_tiers || [];
+            appState.completedBonusTasks = dbUser.completed_bonus_tasks || [];
+            appState.totalWithdrawn = parseFloat(dbUser.total_withdrawn);
+            appState.payoutDestination = dbUser.payout_destination;
+            appState.joinedAt = dbUser.created_at || appState.joinedAt;
+            appState.lastDailyBonusAt = dbUser.last_daily_bonus_at
+                ? new Date(dbUser.last_daily_bonus_at).getTime()
+                : appState.lastDailyBonusAt;
+        }
+
         async function syncProfileWithBackend() {
             if (!appState.isUserRegistered || !appState.userEmail) return;
             try {
@@ -1102,15 +1122,8 @@
                 });
                 if (response.ok) {
                     const dbUser = await response.json();
-                    appState.userName = dbUser.name;
-                    appState.balance = parseFloat(dbUser.balance);
-                    appState.currentTaskTier = parseInt(dbUser.current_task_tier);
-                    appState.completedTiers = dbUser.completed_tiers || [];
-                    appState.totalWithdrawn = parseFloat(dbUser.total_withdrawn);
-                    appState.payoutDestination = dbUser.payout_destination;
-                    appState.joinedAt = dbUser.created_at || appState.joinedAt;
+                    applyServerUser(dbUser);
                     saveState();
-                    
                     await syncTransactions();
                 }
             } catch (err) {
@@ -1297,6 +1310,18 @@
             lucide.createIcons();
         }
 
+        // Escapes user-supplied text before it's inserted via innerHTML (e.g. withdrawal
+        // destination / bank name), since those values are free text the user controls.
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         function renderTransactionLogs() {
             const logContainer = document.getElementById('transactionHistory');
             if (!appState.transactions || appState.transactions.length === 0) {
@@ -1308,20 +1333,35 @@
                 let title = '';
                 let amtColor = '';
                 let amtSign = '';
-                let destInfo = tx.destination || '';
+                const destInfo = escapeHtml(tx.destination || '');
+                const txType = tx.method || tx.type;
 
-                if (tx.method === 'withdrawal' || tx.type === 'withdrawal') {
-                    title = `Withdrawal`;
-                    amtColor = '#ef4444';
-                    amtSign = '-';
-                } else if (tx.method === 'bonus' || tx.type === 'bonus') {
-                    title = 'Daily Bonus';
-                    amtColor = 'var(--secondary)';
-                    amtSign = '+';
-                } else {
-                    title = 'Task Reward';
-                    amtColor = 'var(--secondary)';
-                    amtSign = '+';
+                switch (txType) {
+                    case 'withdrawal':
+                        title = 'Withdrawal';
+                        amtColor = '#ef4444';
+                        amtSign = '-';
+                        break;
+                    case 'daily_bonus':
+                    case 'bonus':
+                        title = 'Daily Bonus';
+                        amtColor = 'var(--secondary)';
+                        amtSign = '+';
+                        break;
+                    case 'bonus_task':
+                        title = 'Bonus Task Reward';
+                        amtColor = 'var(--secondary)';
+                        amtSign = '+';
+                        break;
+                    case 'bonus_unlock':
+                        title = 'Bonus Balance Unlocked';
+                        amtColor = 'var(--secondary)';
+                        amtSign = '+';
+                        break;
+                    default:
+                        title = 'Task Reward';
+                        amtColor = 'var(--secondary)';
+                        amtSign = '+';
                 }
 
                 const statusClass = tx.status === 'success' ? 'badge-success' : 'badge-pending';
@@ -1367,6 +1407,11 @@
                 return;
             }
 
+            if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showToast("Please enter a valid email address.");
+                return;
+            }
+
             try {
                 const response = await fetch('/api/user/sync', {
                     method: 'POST',
@@ -1380,14 +1425,7 @@
 
                 if (response.ok) {
                     const dbUser = await response.json();
-                    appState.userName = dbUser.name;
-                    appState.userEmail = dbUser.email;
-                    appState.payoutDestination = dbUser.payout_destination;
-                    appState.balance = parseFloat(dbUser.balance);
-                    appState.currentTaskTier = parseInt(dbUser.current_task_tier);
-                    appState.completedTiers = dbUser.completed_tiers || [];
-                    appState.totalWithdrawn = parseFloat(dbUser.total_withdrawn);
-                    appState.joinedAt = dbUser.created_at || appState.joinedAt || Date.now();
+                    applyServerUser(dbUser);
                     appState.isUserRegistered = true;
                     saveState();
                     
@@ -1442,25 +1480,49 @@
             }
         }
 
-        function claimDailyBonus() {
+        async function claimDailyBonus() {
             const now = Date.now();
             if (appState.lastDailyBonusAt && (now - appState.lastDailyBonusAt) < DAILY_BONUS_COOLDOWN_MS) {
                 showToast("You've already claimed today's bonus. Come back later!");
                 return;
             }
 
-            appState.balance += DAILY_BONUS_AMOUNT;
-            appState.lastDailyBonusAt = now;
-            appState.transactions.unshift({
-                id: `bonus-${now}`,
-                amount: DAILY_BONUS_AMOUNT,
-                method: 'bonus',
-                destination: 'Daily Check-in',
-                status: 'success',
-                createdAt: new Date(now).toISOString()
-            });
-            saveState();
-            showToast(`Daily bonus claimed: +₵${DAILY_BONUS_AMOUNT.toFixed(2)}!`);
+            const btn = document.getElementById('dailyBonusBtn');
+            if (btn) { btn.disabled = true; btn.textContent = "Claiming..."; }
+
+            try {
+                const response = await fetch('/api/user/claim-daily-bonus', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: appState.userEmail })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        appState.balance = parseFloat(data.user.balance);
+                        appState.lastDailyBonusAt = data.user.last_daily_bonus_at
+                            ? new Date(data.user.last_daily_bonus_at).getTime()
+                            : now;
+                        saveState();
+                        await syncTransactions();
+                        showToast(`Daily bonus claimed: +₵${DAILY_BONUS_AMOUNT.toFixed(2)}!`);
+                    }
+                } else {
+                    const errData = await response.json().catch(() => ({}));
+                    showToast(errData.error || "Couldn't claim the daily bonus right now.");
+                    // If the server says we're on cooldown, trust its timing over ours.
+                    if (typeof errData.retryAfterMs === 'number') {
+                        appState.lastDailyBonusAt = now - (DAILY_BONUS_COOLDOWN_MS - errData.retryAfterMs);
+                        saveState();
+                    }
+                }
+            } catch (err) {
+                console.error("Error claiming daily bonus:", err);
+                showToast("Network error. Please try again.");
+            } finally {
+                updateUI();
+            }
         }
 
         function showSheet(title, contentHTML) {
@@ -1617,6 +1679,8 @@
                 return;
             }
 
+            let serverConfirmed = false;
+
             try {
                 const response = await fetch('/api/user/complete-tier', {
                     method: 'POST',
@@ -1632,10 +1696,12 @@
                     const data = await response.json();
                     if (data.success) {
                         appState.balance = parseFloat(data.user.balance);
+                        appState.bonusBalance = parseFloat(data.user.bonus_balance);
                         appState.currentTaskTier = parseInt(data.user.current_task_tier);
                         appState.completedTiers = data.user.completed_tiers || [];
                         saveState();
                         await syncTransactions();
+                        serverConfirmed = true;
                     }
                 } else {
                     // Fallback
@@ -1661,8 +1727,12 @@
                 saveState();
             }
 
-            // Completing Task Tier 1 may unlock any previously earned, locked bonus balance.
-            unlockBonusIfEligible();
+            // The server already unlocks any locked bonus balance atomically when Tier 1
+            // clears (see /api/user/complete-tier). Only apply the local fallback unlock
+            // when we weren't able to confirm with the server, to avoid double-crediting.
+            if (!serverConfirmed) {
+                unlockBonusIfEligible();
+            }
             spawnConfetti();
 
             showSheet("Task Succeeded", `
@@ -1683,6 +1753,8 @@
         // immediately). Wire this to a real backend endpoint (e.g. /api/user/complete-bonus-task)
         // when one exists; falls back to a client-side update otherwise.
         async function processBonusTaskCompletion() {
+            let serverConfirmed = false;
+
             try {
                 const response = await fetch('/api/user/complete-bonus-task', {
                     method: 'POST',
@@ -1697,10 +1769,12 @@
                 if (response.ok) {
                     const data = await response.json();
                     if (data.success) {
+                        appState.balance = parseFloat(data.user.balance);
                         appState.bonusBalance = parseFloat(data.user.bonus_balance);
                         appState.completedBonusTasks = data.user.completed_bonus_tasks || [];
                         saveState();
                         await syncTransactions();
+                        serverConfirmed = true;
                     }
                 } else {
                     applyBonusRewardLocally();
@@ -1710,7 +1784,9 @@
                 applyBonusRewardLocally();
             }
 
-            unlockBonusIfEligible();
+            if (!serverConfirmed) {
+                unlockBonusIfEligible();
+            }
             saveState();
             spawnConfetti();
 
@@ -1786,13 +1862,13 @@
                 return;
             }
 
-            if(amt > appState.balance) {
-                showToast("Insufficient balance.");
+            if(amt <= 0) {
+                showToast("Invalid withdrawal amount.");
                 return;
             }
 
-            if(amt <= 0) {
-                showToast("Invalid withdrawal amount.");
+            if(amt > appState.balance) {
+                showToast("Insufficient balance.");
                 return;
             }
 
@@ -1873,7 +1949,10 @@
                     payoutDestination: "",
                     transactions: [],
                     joinedAt: null,
-                    lastDailyBonusAt: null
+                    lastDailyBonusAt: null,
+                    lastSurpriseDate: null,
+                    bonusBalance: 0.00,
+                    completedBonusTasks: []
                 };
                 saveState();
 
